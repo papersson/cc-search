@@ -71,6 +71,7 @@ cc-search <command> [options]
 
 Commands:
   search <query>    Search sessions
+  chunk <id>        View full content of a chunk
   index             Build/rebuild the search index
   status            Show index stats
 
@@ -88,6 +89,7 @@ Examples:
   cc-search search "authentication JWT"
   cc-search search "nginx config" --project myapp --since 2w
   cc-search search "caching strategy" --json
+  cc-search chunk a2ffd9f7          # View full chunk from search results
   cc-search index
   cc-search status
 ```
@@ -99,21 +101,28 @@ Examples:
 ### Human-readable (default)
 
 ```
-[1] Project: myapp | 3 days ago | session abc123
+[1] Project: myapp | 3 days ago | 100%
 
   You: How should I handle JWT refresh tokens?
 
   Claude: For JWT refresh tokens, you'll want to...
   [truncated - 847 more chars]
 
-  → Full session: ~/.claude/projects/-Users-pat-myapp/abc123.jsonl
+  → cc-search chunk a2ffd9f7
 
-[2] Project: auth-service | 2 weeks ago | session def456
+[2] Project: auth-service | 2 weeks ago | 87%
   ...
 
 ─────────────────────────────────────────────────
 Found 2 results in 0.23s
 ```
+
+**Color scheme:**
+- `You:` label in cyan
+- `Claude:` label in green
+- Project name in green
+- Rank number in bold cyan
+- Age and score in dim
 
 ### JSON (--json flag)
 

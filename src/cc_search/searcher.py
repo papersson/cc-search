@@ -10,7 +10,6 @@ from rich.panel import Panel
 from rich.text import Text
 
 from cc_search.chunker import get_content_type_weight
-from cc_search.embeddings import encode_text
 from cc_search.models import SearchResult
 from cc_search.storage import (
     ensure_index_exists,
@@ -282,6 +281,9 @@ def format_human_output(
             console.print("[yellow]No results found. Try a different query.[/yellow]")
         return
 
+    # Calculate max score for percentage normalization
+    max_score = max(r.score for r in results) if results else 1.0
+
     for i, result in enumerate(results, 1):
         # Calculate relative time
         age = datetime.now() - result.session.updated_at.replace(tzinfo=None)
@@ -292,22 +294,27 @@ def format_human_output(
         else:
             age_str = f"{age.seconds // 60} minutes ago"
 
-        # Truncate text for display
+        # Calculate score percentage (relative to top result)
+        score_pct = int((result.score / max_score) * 100) if max_score > 0 else 0
+
+        # Truncate text for display and colorize
         text = result.chunk.text
         if len(text) > 500:
-            text = text[:500] + f"\n[truncated - {len(result.chunk.text) - 500} more chars]"
+            remaining = len(result.chunk.text) - 500
+            text = text[:500] + f"\n[dim][truncated - {remaining} more chars][/dim]"
+        text = colorize_roles(text)
 
-        # Create panel
+        # Create panel header
         header = Text()
         header.append(f"[{i}] ", style="bold cyan")
         header.append(f"Project: {result.session.project}", style="green")
         header.append(f" | {age_str}", style="dim")
-        header.append(f" | session {result.session.id[:8]}", style="dim")
+        header.append(f" | {score_pct}%", style="dim")
 
         panel = Panel(
             text,
             title=str(header),
-            subtitle=f"→ Full session: {result.session.path}",
+            subtitle=f"→ cc-search chunk {result.chunk.id[:8]}",
             subtitle_align="left",
         )
         console.print(panel)
@@ -354,6 +361,99 @@ def format_json_output(results: list[SearchResult], query: str, search_time_ms: 
     console.print_json(data=output)
 
 
+def colorize_roles(text: str) -> str:
+    """Add Rich markup to colorize You:/Claude: labels."""
+    text = text.replace("You:", "[cyan]You:[/cyan]")
+    text = text.replace("Claude:", "[green]Claude:[/green]")
+    return text
+
+
+def reconstruct_full_text(chunks: list) -> str:
+    """Reconstruct full text from potentially overlapping sub-chunks."""
+    if len(chunks) == 1:
+        return chunks[0].text
+
+    # Sort chunks: the one starting with "You:" goes first, then by text content
+    def sort_key(c):
+        if c.text.strip().startswith("You:"):
+            return (0, "")
+        return (1, c.text[:100])
+
+    sorted_chunks = sorted(chunks, key=sort_key)
+
+    # Merge overlapping chunks
+    result = sorted_chunks[0].text
+    for chunk in sorted_chunks[1:]:
+        chunk_text = chunk.text
+        # Find overlap by checking if end of result matches start of chunk
+        best_overlap = 0
+        # Check overlaps from large to small (up to 600 chars which is > 25% of 2000)
+        for overlap_size in range(min(600, len(result), len(chunk_text)), 50, -1):
+            if result.endswith(chunk_text[:overlap_size]):
+                best_overlap = overlap_size
+                break
+        # Append non-overlapping part
+        if best_overlap > 0:
+            result += chunk_text[best_overlap:]
+        else:
+            # No overlap found - chunks might not be contiguous, just append
+            result += "\n\n" + chunk_text
+
+    return result
+
+
+def display_chunk(chunk_id: str) -> None:
+    """Display full chunk content by ID (or prefix)."""
+    from cc_search.storage import (
+        ensure_index_exists,
+        get_chunk_by_prefix,
+        get_chunks_by_message_ids,
+        get_session,
+    )
+
+    conn = ensure_index_exists()
+    chunk = get_chunk_by_prefix(conn, chunk_id)
+
+    if chunk is None:
+        console.print(f"[red]Chunk not found: {chunk_id}[/red]")
+        conn.close()
+        return
+
+    # Get all chunks with same message_ids to reconstruct full content
+    all_chunks = get_chunks_by_message_ids(conn, chunk.message_ids)
+    full_text = reconstruct_full_text(all_chunks)
+
+    session = get_session(conn, chunk.session_id)
+    conn.close()
+
+    # Calculate relative time
+    age = datetime.now() - chunk.timestamp.replace(tzinfo=None)
+    if age.days > 0:
+        age_str = f"{age.days} days ago"
+    elif age.seconds > 3600:
+        age_str = f"{age.seconds // 3600} hours ago"
+    else:
+        age_str = f"{age.seconds // 60} minutes ago"
+
+    # Build header
+    header = Text()
+    if session:
+        header.append(f"Project: {session.project}", style="green")
+        header.append(f" | {age_str}", style="dim")
+
+    # Colorize the text
+    colored_text = colorize_roles(full_text)
+
+    # Create panel with full content
+    panel = Panel(
+        colored_text,
+        title=str(header) if session else None,
+        subtitle=f"→ Session: {session.path}" if session else None,
+        subtitle_align="left",
+    )
+    console.print(panel)
+
+
 def perform_search(
     query: str,
     project: str | None = None,
@@ -377,7 +477,9 @@ def perform_search(
     conn = ensure_index_exists()
     since_dt = parse_since(since)
 
-    # Generate query embedding
+    # Generate query embedding (lazy import to avoid loading torch for non-search commands)
+    from cc_search.embeddings import encode_text
+
     query_embedding = encode_text(query)
 
     # Perform both searches

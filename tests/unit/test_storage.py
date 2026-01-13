@@ -1,6 +1,5 @@
 """Tests for the storage module."""
 
-import sqlite3
 import tempfile
 from datetime import datetime
 from pathlib import Path
@@ -12,8 +11,8 @@ from cc_search.models import Chunk, Session
 from cc_search.storage import (
     ensure_index_exists,
     get_chunk,
+    get_chunk_by_prefix,
     get_session,
-    init_schema,
     save_chunk,
     save_session,
 )
@@ -24,11 +23,13 @@ def temp_db():
     """Create a temporary database for testing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
-        with patch("cc_search.storage.INDEX_PATH", db_path):
-            with patch("cc_search.storage.INDEX_DIR", Path(tmpdir)):
-                conn = ensure_index_exists()
-                yield conn, db_path
-                conn.close()
+        with (
+            patch("cc_search.storage.INDEX_PATH", db_path),
+            patch("cc_search.storage.INDEX_DIR", Path(tmpdir)),
+        ):
+            conn = ensure_index_exists()
+            yield conn, db_path
+            conn.close()
 
 
 def test_init_schema(temp_db):
@@ -114,3 +115,45 @@ def test_chunk_not_found(temp_db):
     """Test getting non-existent chunk returns None."""
     conn, _ = temp_db
     assert get_chunk(conn, "nonexistent") is None
+
+
+def test_get_chunk_by_prefix(temp_db):
+    """Test getting chunk by ID prefix."""
+    conn, _ = temp_db
+
+    # First save a session
+    session = Session(
+        id="session-1",
+        path=Path("/test/session.jsonl"),
+        project="test",
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+    save_session(conn, session)
+
+    # Save a chunk with a known ID
+    chunk = Chunk(
+        id="a2ffd9f7-1234-5678-9abc-def012345678",
+        session_id="session-1",
+        message_ids=["msg-1"],
+        text="Test chunk content",
+        content_types={"text"},
+        timestamp=datetime.now(),
+    )
+    embedding = [0.1] * 384
+    save_chunk(conn, chunk, embedding)
+    conn.commit()
+
+    # Test finding by prefix
+    retrieved = get_chunk_by_prefix(conn, "a2ffd9f7")
+    assert retrieved is not None
+    assert retrieved.id == chunk.id
+    assert retrieved.text == chunk.text
+
+    # Test shorter prefix works
+    retrieved = get_chunk_by_prefix(conn, "a2ffd")
+    assert retrieved is not None
+    assert retrieved.id == chunk.id
+
+    # Test non-matching prefix returns None
+    assert get_chunk_by_prefix(conn, "zzzzz") is None

@@ -77,6 +77,16 @@ def index(
 
 
 @app.command()
+def chunk(
+    chunk_id: Annotated[str, typer.Argument(help="Chunk ID (from search results)")],
+) -> None:
+    """View full content of a chunk."""
+    from cc_search.searcher import display_chunk
+
+    display_chunk(chunk_id)
+
+
+@app.command()
 def status() -> None:
     """Show index statistics."""
     from cc_search.storage import get_index_stats

@@ -206,6 +206,42 @@ def get_chunk(conn: sqlite3.Connection, chunk_id: str) -> Chunk | None:
     )
 
 
+def get_chunk_by_prefix(conn: sqlite3.Connection, prefix: str) -> Chunk | None:
+    """Get a chunk by ID prefix (first 8+ chars)."""
+    row = conn.execute(
+        "SELECT * FROM chunks WHERE id LIKE ? LIMIT 1", (f"{prefix}%",)
+    ).fetchone()
+    if row is None:
+        return None
+    return Chunk(
+        id=row["id"],
+        session_id=row["session_id"],
+        message_ids=json.loads(row["message_ids"]),
+        text=row["text"],
+        content_types=set(json.loads(row["content_types"])),
+        timestamp=datetime.fromisoformat(row["timestamp"]),
+    )
+
+
+def get_chunks_by_message_ids(conn: sqlite3.Connection, message_ids: list[str]) -> list[Chunk]:
+    """Get all chunks with the same message_ids (for reconstructing sub-chunked content)."""
+    message_ids_json = json.dumps(message_ids)
+    rows = conn.execute(
+        "SELECT * FROM chunks WHERE message_ids = ?", (message_ids_json,)
+    ).fetchall()
+    return [
+        Chunk(
+            id=row["id"],
+            session_id=row["session_id"],
+            message_ids=json.loads(row["message_ids"]),
+            text=row["text"],
+            content_types=set(json.loads(row["content_types"])),
+            timestamp=datetime.fromisoformat(row["timestamp"]),
+        )
+        for row in rows
+    ]
+
+
 def set_metadata(conn: sqlite3.Connection, key: str, value: str) -> None:
     """Set a metadata value."""
     conn.execute(
