@@ -37,13 +37,13 @@ def create_chunks(messages: list[Message], session_id: str) -> list[Chunk]:
                 j += 1
 
             # Combine into chunk text
-            chunk_text = f"User: {user_msg.content}"
+            chunk_text = f"You: {user_msg.content}"
             message_ids = [user_msg.id]
             content_types = {user_msg.content_type}
             timestamp = user_msg.timestamp
 
             for asst_msg in assistant_msgs:
-                chunk_text += f"\n\nAssistant: {asst_msg.content}"
+                chunk_text += f"\n\nClaude: {asst_msg.content}"
                 message_ids.append(asst_msg.id)
                 content_types.add(asst_msg.content_type)
                 # Use latest timestamp
@@ -68,7 +68,7 @@ def create_chunks(messages: list[Message], session_id: str) -> list[Chunk]:
                 id=str(uuid.uuid4()),
                 session_id=session_id,
                 message_ids=[msg.id],
-                text=f"Assistant: {msg.content}",
+                text=f"Claude: {msg.content}",
                 content_types={msg.content_type},
                 timestamp=msg.timestamp,
             )

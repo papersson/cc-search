@@ -268,10 +268,18 @@ def build_search_results(
     return results
 
 
-def format_human_output(results: list[SearchResult], query: str, search_time_ms: int) -> None:
+def format_human_output(
+    results: list[SearchResult],
+    _query: str,
+    search_time_ms: int,
+    project_filter: str | None = None,
+) -> None:
     """Format results for human-readable output."""
     if not results:
-        console.print("[yellow]No results found[/yellow]")
+        if project_filter:
+            console.print(f"[yellow]No sessions found for project '{project_filter}'[/yellow]")
+        else:
+            console.print("[yellow]No results found. Try a different query.[/yellow]")
         return
 
     for i, result in enumerate(results, 1):
@@ -309,6 +317,21 @@ def format_human_output(results: list[SearchResult], query: str, search_time_ms:
     console.print(f"Found {len(results)} results in {search_time_ms}ms")
 
 
+def parse_chunk_messages(text: str) -> list[dict[str, str]]:
+    """Parse chunk text into user/assistant messages."""
+    messages = []
+    parts = re.split(r"\n\n(?=You:|Claude:)", text)
+    for part in parts:
+        part = part.strip()
+        if part.startswith("You:"):
+            messages.append({"role": "user", "content": part[4:].strip()})
+        elif part.startswith("Claude:"):
+            messages.append({"role": "assistant", "content": part[7:].strip()})
+        elif part:
+            messages.append({"role": "assistant", "content": part})
+    return messages
+
+
 def format_json_output(results: list[SearchResult], query: str, search_time_ms: int) -> None:
     """Format results as JSON for programmatic use."""
     output = {
@@ -320,12 +343,7 @@ def format_json_output(results: list[SearchResult], query: str, search_time_ms: 
                 "session_id": result.session.id,
                 "session_path": str(result.session.path),
                 "timestamp": result.chunk.timestamp.isoformat(),
-                "messages": [
-                    {
-                        "role": "user" if "User:" in result.chunk.text[:20] else "assistant",
-                        "content": result.chunk.text,
-                    }
-                ],
+                "messages": parse_chunk_messages(result.chunk.text),
             }
             for i, result in enumerate(results)
         ],
@@ -383,4 +401,4 @@ def perform_search(
     if json_output:
         format_json_output(results, query, search_time_ms)
     else:
-        format_human_output(results, query, search_time_ms)
+        format_human_output(results, query, search_time_ms, project_filter=project)

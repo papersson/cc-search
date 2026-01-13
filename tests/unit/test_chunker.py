@@ -12,8 +12,8 @@ def test_create_chunks_basic(sample_messages):
 
     assert len(chunks) == 1
     chunk = chunks[0]
-    assert "User:" in chunk.text
-    assert "Assistant:" in chunk.text
+    assert "You:" in chunk.text
+    assert "Claude:" in chunk.text
     assert "authentication" in chunk.text.lower()
     assert chunk.session_id == "test-session"
 

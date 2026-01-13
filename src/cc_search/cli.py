@@ -49,6 +49,11 @@ def search(
     json_output: Annotated[bool, typer.Option("--json", help="Output as JSON")] = False,
 ) -> None:
     """Search sessions for a query."""
+    # Edge case: empty query (Section 10)
+    if not query.strip():
+        console.print("[red]Error: Query required[/red]")
+        raise typer.Exit(1)
+
     from cc_search.searcher import perform_search
 
     perform_search(
