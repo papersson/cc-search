@@ -279,3 +279,72 @@ def get_index_stats() -> dict[str, Any]:
         "index_path": str(INDEX_PATH),
         "last_indexed": last_indexed,
     }
+
+
+def get_all_projects(conn: sqlite3.Connection) -> list[dict[str, Any]]:
+    """Get all unique projects with their session counts."""
+    rows = conn.execute("""
+        SELECT project, COUNT(*) as session_count, MAX(updated_at) as last_updated
+        FROM sessions
+        GROUP BY project
+        ORDER BY last_updated DESC
+    """).fetchall()
+    return [
+        {"project": row["project"], "sessions": row["session_count"], "last_updated": row["last_updated"]}
+        for row in rows
+    ]
+
+
+def get_detailed_stats(conn: sqlite3.Connection) -> dict[str, Any]:
+    """Get detailed index statistics with per-project breakdown."""
+    # Per-project stats
+    project_stats = conn.execute("""
+        SELECT
+            s.project,
+            COUNT(DISTINCT s.id) as sessions,
+            COUNT(c.id) as chunks,
+            MIN(s.created_at) as oldest,
+            MAX(s.updated_at) as newest
+        FROM sessions s
+        LEFT JOIN chunks c ON s.id = c.session_id
+        GROUP BY s.project
+        ORDER BY COUNT(c.id) DESC
+    """).fetchall()
+
+    # Index file size
+    index_size = INDEX_PATH.stat().st_size if INDEX_PATH.exists() else 0
+
+    return {
+        "projects": [dict(row) for row in project_stats],
+        "index_size_bytes": index_size,
+        "index_size_human": _format_size(index_size),
+    }
+
+
+def _format_size(size_bytes: int) -> str:
+    """Format byte size as human-readable string."""
+    size = float(size_bytes)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024:
+            return f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} TB"
+
+
+def get_session_chunks_ordered(conn: sqlite3.Connection, session_id: str) -> list[Chunk]:
+    """Get all chunks for a session ordered by timestamp."""
+    rows = conn.execute(
+        "SELECT * FROM chunks WHERE session_id = ? ORDER BY timestamp",
+        (session_id,)
+    ).fetchall()
+    return [
+        Chunk(
+            id=row["id"],
+            session_id=row["session_id"],
+            message_ids=json.loads(row["message_ids"]),
+            text=row["text"],
+            content_types=set(json.loads(row["content_types"])),
+            timestamp=datetime.fromisoformat(row["timestamp"]),
+        )
+        for row in rows
+    ]

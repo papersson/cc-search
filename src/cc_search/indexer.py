@@ -1,7 +1,7 @@
 """JSONL session indexer."""
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from rich.console import Console
@@ -95,9 +95,9 @@ def parse_session(path: Path) -> tuple[Session, list[Message]] | None:
                             first_timestamp = ts
                         last_timestamp = ts
                     except ValueError:
-                        ts = datetime.now()
+                        ts = datetime.now(tz=timezone.utc)
                 else:
-                    ts = datetime.now()
+                    ts = datetime.now(tz=timezone.utc)
 
                 if record_type == "user":
                     msg_data = record.get("message", {})
@@ -193,7 +193,7 @@ def parse_session(path: Path) -> tuple[Session, list[Message]] | None:
     unique_id = f"{path.parent.name}_{path.stem}"
 
     # Ensure we have timestamps
-    now = datetime.now()
+    now = datetime.now(tz=timezone.utc)
     if first_timestamp is None:
         first_timestamp = now
     if last_timestamp is None:
@@ -225,8 +225,13 @@ def filter_messages_for_chunking(messages: list[Message]) -> list[Message]:
     return sorted(messages, key=lambda m: (m.timestamp, priority_order.get(m.content_type, 5)))
 
 
-def build_index(force: bool = False) -> None:
-    """Build or rebuild the search index."""
+def build_index(force: bool = False, dry_run: bool = False) -> None:
+    """Build or rebuild the search index.
+
+    Args:
+        force: Reindex all sessions even if unchanged.
+        dry_run: Show what would be indexed without actually indexing.
+    """
     conn = ensure_index_exists()
 
     session_paths = discover_sessions()
@@ -247,12 +252,26 @@ def build_index(force: bool = False) -> None:
                 sessions_to_index.append(path)
             else:
                 # Check if file was modified
-                mtime = datetime.fromtimestamp(path.stat().st_mtime)
+                mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
                 if mtime > existing.updated_at:
                     sessions_to_index.append(path)
 
     if not sessions_to_index:
         console.print("[green]Index is up to date[/green]")
+        conn.close()
+        return
+
+    if dry_run:
+        console.print(f"[yellow]Dry run - would index {len(sessions_to_index)} sessions:[/yellow]")
+        # Group by project for cleaner output
+        by_project: dict[str, list[Path]] = {}
+        for path in sessions_to_index:
+            project = extract_project_name(path)
+            by_project.setdefault(project, []).append(path)
+
+        for project, paths in sorted(by_project.items()):
+            console.print(f"  [cyan]{project}[/cyan]: {len(paths)} sessions")
+        conn.close()
         return
 
     console.print(f"Indexing {len(sessions_to_index)} sessions...")
@@ -309,7 +328,7 @@ def build_index(force: bool = False) -> None:
         save_chunk(conn, chunk, embedding)
 
     conn.commit()
-    set_metadata(conn, "last_indexed", datetime.now().isoformat())
+    set_metadata(conn, "last_indexed", datetime.now(tz=timezone.utc).isoformat())
     conn.close()
 
     session_count = len(all_chunks)

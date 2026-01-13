@@ -74,24 +74,50 @@ Commands:
   chunk <id>        View full content of a chunk
   index             Build/rebuild the search index
   status            Show index stats
+  projects          List all indexed projects
 
 Search options:
   --project, -p     Filter to project (path substring match)
-  --since, -s       Time range (e.g., "1w", "30d", "2024-01-01")
+  --exclude, -x     Exclude projects matching pattern (can repeat)
+  --since, -s       Start time (e.g., "1w", "30d", "2024-01-01")
+  --until, -u       End time (e.g., "1d", "2024-06-30")
   --type, -t        Content type filter (user, assistant, tool, thinking)
   --limit, -n       Number of results (default: 5)
   --json            JSON output for programmatic use
+  --paths           Only output session paths
+  --interactive, -i Interactive selection with fzf
+  --export, -e      Export results to markdown file
 
 Index options:
-  --force           Reindex all sessions
+  --force, -f       Reindex all sessions
+  --dry-run, -d     Show what would be indexed without indexing
+
+Chunk options:
+  --open, -o        Open session file in $EDITOR
+  --path            Only output session path
+  --context, -C     Number of surrounding chunks to show
+
+Status options:
+  --verbose, -v     Show detailed per-project stats
+
+Projects options:
+  --json            JSON output
 
 Examples:
   cc-search search "authentication JWT"
   cc-search search "nginx config" --project myapp --since 2w
   cc-search search "caching strategy" --json
+  cc-search search "error" --exclude test --exclude vendor
+  cc-search search "query" --since 2024-01-01 --until 2024-06-30
+  cc-search search "query" --interactive
+  cc-search search "query" --export results.md
   cc-search chunk a2ffd9f7          # View full chunk from search results
+  cc-search chunk a2ffd9f7 --open   # Open in editor
+  cc-search chunk a2ffd9f7 --context 3  # Show surrounding chunks
   cc-search index
-  cc-search status
+  cc-search index --dry-run
+  cc-search status --verbose
+  cc-search projects
 ```
 
 ---
