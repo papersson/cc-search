@@ -5,13 +5,21 @@ Semantic + keyword search for Claude Code sessions.
 ## Install
 
 ```bash
-uvx cc-search --help
+uv tool install git+https://github.com/papersson/cc-search
 ```
 
-Or install globally:
+Or clone and install locally:
 
 ```bash
-uv tool install cc-search
+git clone https://github.com/papersson/cc-search
+cd cc-search
+uv tool install .
+```
+
+Or run without installing:
+
+```bash
+uvx --from git+https://github.com/papersson/cc-search cc-search --help
 ```
 
 ## Usage
